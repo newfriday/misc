@@ -65,8 +65,9 @@ fd_read_cb(void *opaque)
     gchar *buffer = NULL;
 
     g_io_channel_read_line(channel, &buffer, &len, NULL, NULL);
-    if(len > 0)
-      g_print("%d\n", len);
+    if(len > 0) {
+        g_print("len: %d, buffer: %s\n", len, buffer);
+    }
     g_free(buffer);
 }
 
@@ -335,12 +336,8 @@ qemu_init_main_loop()
     g_source_unref(src);
 }
 
-static GArray *gpollfds;
-
 static int glib_pollfds_idx;
 static int glib_n_poll_fds;
-
-static int max_priority;
 
 static void glib_pollfds_fill()
 {
@@ -400,13 +397,12 @@ static void main_loop()
 {
     while (TRUE) {
         main_loop_wait();
-        sleep(2);
     }
 }
 
 int main(int argc, char* argv[])
 {
-    int ret, fd;
+    int fd;
     GError *error = NULL;
     GIOChannel *channel;
 
