@@ -193,9 +193,6 @@ AioContext *
 aio_context_new()
 {
     AioContext *ctx;
-
-    GMainLoop *loop = g_main_loop_new(NULL, FALSE);
-
     ctx = (AioContext *) g_source_new(&aio_source_funcs, sizeof(AioContext));
 
     return ctx;
