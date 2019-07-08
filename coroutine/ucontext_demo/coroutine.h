@@ -10,7 +10,7 @@ struct schedule;
 
 typedef void (*coroutine_func)(struct schedule *, void *ud);
 
-struct schedule * coroutine_open(void);
+struct schedule * scheduler_open(void);
 void coroutine_close(struct schedule *);
 
 int coroutine_new(struct schedule *, coroutine_func, void *ud);
