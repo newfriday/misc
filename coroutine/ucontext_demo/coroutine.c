@@ -8,9 +8,9 @@
 
 #if __APPLE__ && __MACH__
 	#include <sys/ucontext.h>
-#else 
+#else
 	#include <ucontext.h>
-#endif 
+#endif
 
 #define STACK_SIZE (1024*1024)
 #define DEFAULT_COROUTINE 16
@@ -37,7 +37,7 @@ struct coroutine {
 	char *stack;
 };
 
-struct coroutine * 
+struct coroutine *
 _co_new(struct schedule *S , coroutine_func func, void *ud) {
 	struct coroutine * co = malloc(sizeof(*co));
 	co->func = func;
@@ -56,8 +56,8 @@ _co_delete(struct coroutine *co) {
 	free(co);
 }
 
-struct schedule * 
-coroutine_open(void) {
+struct schedule *
+scheduler_open(void) {
 	struct schedule *S = malloc(sizeof(*S));
 	S->nco = 0;
 	S->cap = DEFAULT_COROUTINE;
@@ -67,7 +67,7 @@ coroutine_open(void) {
 	return S;
 }
 
-void 
+void
 coroutine_close(struct schedule *S) {
 	int i;
 	for (i=0;i<S->cap;i++) {
@@ -81,7 +81,7 @@ coroutine_close(struct schedule *S) {
 	free(S);
 }
 
-int 
+int
 coroutine_new(struct schedule *S, coroutine_func func, void *ud) {
 	struct coroutine *co = _co_new(S, func , ud);
 	if (S->nco >= S->cap) {
@@ -120,7 +120,7 @@ mainfunc(uint32_t low32, uint32_t hi32) {
 	S->running = -1;
 }
 
-void 
+void
 coroutine_resume(struct schedule * S, int id) {
 	assert(S->running == -1);
 	assert(id >=0 && id < S->cap);
@@ -176,7 +176,7 @@ coroutine_yield(struct schedule * S) {
 	swapcontext(&C->ctx , &S->main);
 }
 
-int 
+int
 coroutine_status(struct schedule * S, int id) {
 	assert(id>=0 && id < S->cap);
 	if (S->co[id] == NULL) {
@@ -185,7 +185,7 @@ coroutine_status(struct schedule * S, int id) {
 	return S->co[id]->status;
 }
 
-int 
+int
 coroutine_running(struct schedule * S) {
 	return S->running;
 }

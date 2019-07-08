@@ -33,7 +33,7 @@ test(struct schedule *S) {
 
 int
 main() {
-    struct schedule * S = coroutine_open();
+    struct schedule * S = scheduler_open();
     test(S);
     coroutine_close(S);
 
