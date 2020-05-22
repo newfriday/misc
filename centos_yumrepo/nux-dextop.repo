@@ -1,0 +1,15 @@
+[nux-dextop]
+name=Nux.Ro RPMs for general desktop use
+baseurl=http://li.nux.ro/download/nux/dextop/el7/$basearch/ http://mirror.li.nux.ro/li.nux.ro/nux/dextop/el7/$basearch/
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-nux.ro
+protect=0
+
+[nux-dextop-testing]
+name=Nux.Ro RPMs for general desktop use - testing
+baseurl=http://li.nux.ro/download/nux/dextop-testing/el7/$basearch/
+enabled=0
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-nux.ro
+protect=0
