@@ -12,9 +12,10 @@ int main(int argc, char** argv)
     glutInitWindowPosition(100,100);
     //创建窗口
     glutCreateWindow("OpenGL Version");
-    glutCreateWindow("OpenGL Version");
-    const GLubyte* OpenGLVersion =glGetString(GL_VERSION); //返回当前OpenGL实现的版本号
-    printf("OpenGL实现的版本号：%s\n",OpenGLVersion);
+    const GLubyte* OpenGLVendor = glGetString(GL_VENDOR); //返回当前OpenGL实现的厂商
+    const GLubyte* OpenGLVersion = glGetString(GL_VERSION); //返回当前OpenGL实现的版本号
+    printf("OpenGL Vendor: %s\n",OpenGLVendor);
+    printf("OpenGL Version: %s\n",OpenGLVersion);
 
     return 0;
 }
