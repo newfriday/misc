@@ -101,18 +101,18 @@ int main()
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
+    //
     float vertices[] = {
-        -0.5f, -0.5f, 0.0f, // left
-         0.5f, -0.5f, 0.0f, // right
+        -0.5f, 0.0f, 0.0f, // left
+         0.5f, 0.0f, 0.0f, // right
          0.0f,  0.5f, 0.0f  // top
     };
 
     float vertices1[] = {
-        -0.25f, 0.75f, 0.0f, // left
-         0.25f, 0.75f, 0.0f, // right
-         0.0f,  0.5f, 0.0f  // top
+        -0.5f, 0.0f, 0.0f, // left
+         0.5f, 0.0f, 0.0f, // right
+         0.0f,  -0.25f, 0.0f  // top
     };
-
 
     unsigned int VBO, VBO1, VAO, VAO1;
     glGenVertexArrays(1, &VAO);
