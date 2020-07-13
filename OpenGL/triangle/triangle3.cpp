@@ -102,16 +102,15 @@ int main()
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
     float vertices[] = {
-        -0.5f, -0.5f, 0.0f, // left
-         0.5f, -0.5f, 0.0f, // right
-         0.0f,  0.5f, 0.0f, // top
-        -0.25f,  0.75f, 0.0f, // top-left
-         0.25f,  0.75f, 0.0f, // top-right
+        -0.5f, 0.0f, 0.0f,   // left
+         0.5f, 0.0f, 0.0f,   // right
+         0.0f, 0.5f, 0.0f,   // up-vetex
+         0.0f, -0.25f, 0.0f  // down-vetex
     };
 
     unsigned int indices[] = {
         0, 1, 2,
-        2, 3, 4
+        0, 1, 3
     };
 
     unsigned int VBO, VAO, EBO;
