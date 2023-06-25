@@ -1,0 +1,690 @@
+From 3f778393e22641a14a29bd1b73cd9ad67db04abc Mon Sep 17 00:00:00 2001
+From: Guoyi Tu <tugy@chinatelecom.cn>
+Date: Tue, 28 Feb 2023 15:57:18 +0800
+Subject: [PATCH 1/8] add a demo ctcdevice
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecom.cn>
+---
+ default-configs/x86_64-rh-devices.mak |   1 +
+ hw/misc/Kconfig                       |   5 +
+ hw/misc/Makefile.objs                 |   1 +
+ hw/misc/ctcdev.c                      | 176 ++++++++++++++++++++++++++
+ 4 files changed, 183 insertions(+)
+ create mode 100644 hw/misc/ctcdev.c
+
+diff --git a/default-configs/x86_64-rh-devices.mak b/default-configs/x86_64-rh-devices.mak
+index d59b6d9bb5..0d6c105a51 100644
+--- a/default-configs/x86_64-rh-devices.mak
++++ b/default-configs/x86_64-rh-devices.mak
+@@ -18,6 +18,7 @@ CONFIG_DIMM=y
+ CONFIG_E1000E_PCI_EXPRESS=y
+ CONFIG_E1000_PCI=y
+ CONFIG_EDU=y
++CONFIG_CTC=y
+ CONFIG_FDC=y
+ CONFIG_FW_CFG_DMA=y
+ CONFIG_HDA=y
+diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
+index bdd77d8020..1005d6ca0f 100644
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -36,6 +36,11 @@ config EDU
+     default y if TEST_DEVICES
+     depends on PCI && MSI_NONBROKEN
+ 
++config CTC
++    bool
++    default y if TEST_DEVICES
++    depends on PCI && MSI_NONBROKEN
++
+ config PCA9552
+     bool
+     depends on I2C
+diff --git a/hw/misc/Makefile.objs b/hw/misc/Makefile.objs
+index 68aae2eabb..568e87f40f 100644
+--- a/hw/misc/Makefile.objs
++++ b/hw/misc/Makefile.objs
+@@ -7,6 +7,7 @@ common-obj-$(CONFIG_SGA) += sga.o
+ common-obj-$(CONFIG_ISA_TESTDEV) += pc-testdev.o
+ common-obj-$(CONFIG_PCI_TESTDEV) += pci-testdev.o
+ common-obj-$(CONFIG_EDU) += edu.o
++common-obj-y += ctcdev.o
+ common-obj-$(CONFIG_PCA9552) += pca9552.o
+ 
+ common-obj-$(CONFIG_UNIMP) += unimp.o
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+new file mode 100644
+index 0000000000..16840180ec
+--- /dev/null
++++ b/hw/misc/ctcdev.c
+@@ -0,0 +1,176 @@
++/*
++ * QEMU educational PCI device
++ *
++ * Copyright (c) 2012-2015 Jiri Slaby
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ */
++
++#include "qemu/osdep.h"
++#include "qemu/units.h"
++#include "hw/pci/pci.h"
++#include "hw/hw.h"
++#include "hw/pci/msi.h"
++#include "qemu/timer.h"
++#include "qemu/main-loop.h" /* iothread mutex */
++#include "qemu/module.h"
++#include "qapi/visitor.h"
++
++#define PCI_VENDOR_ID_CTC               0x0
++
++#define TYPE_PCI_CTC_DEVICE "ctc"
++#define CTCDEV(obj)        OBJECT_CHECK(CTCDevState, obj, TYPE_PCI_CTC_DEVICE)
++
++#define CTC_BAR_SIZE    64
++
++typedef struct {
++    PCIDevice pdev;
++    MemoryRegion mmio;
++    char devid[64];
++} CTCDevState;
++
++
++static uint64_t ctc_mmio_read(void *opaque, hwaddr addr, unsigned size)
++{
++    CTCDevState *cdev = opaque;
++    uint64_t val = ~0ULL;
++
++
++    if (addr + size > CTC_BAR_SIZE) {
++        return val;
++    }
++
++    switch (size) {
++    case 1:
++        return (uint8_t)cdev->devid[addr];
++    case 2:
++        return *((uint16_t *)(cdev->devid + addr));
++    case 4:
++        return *((uint32_t *)(cdev->devid + addr));
++    case 8:
++        return *((uint64_t *)(cdev->devid + addr));
++    default:
++        return val;
++    }
++}
++
++static void ctc_mmio_write(void *opaque, hwaddr addr, uint64_t val,
++                unsigned size)
++{
++    CTCDevState *cdev = opaque;
++
++    if (addr + size > CTC_BAR_SIZE) {
++        return;
++    }
++
++    switch (size) {
++    case 1:
++        cdev->devid[addr] = (uint8_t)val;
++        break;
++    case 2:
++        *((uint16_t *)(cdev->devid + addr)) = (uint16_t)val;
++        break;
++    case 4:
++        *((uint32_t *)(cdev->devid + addr)) =  (uint32_t)val;
++        break;
++    case 8:
++        *((uint64_t *)(cdev->devid + addr)) = val;
++        break;
++    default:
++        return;
++    }
++}
++
++static const MemoryRegionOps ctc_mmio_ops = {
++    .read = ctc_mmio_read,
++    .write = ctc_mmio_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid = {
++        .min_access_size = 4,
++        .max_access_size = 8,
++    },
++    .impl = {
++        .min_access_size = 4,
++        .max_access_size = 8,
++    },
++
++};
++
++static void pci_ctc_realize(PCIDevice *pdev, Error **errp)
++{
++    CTCDevState *cdev = CTCDEV(pdev);
++    uint8_t *pci_conf = pdev->config;
++
++    pci_config_set_interrupt_pin(pci_conf, 1);
++
++    if (msi_init(pdev, 0, 1, true, false, errp)) {
++        return;
++    }
++
++    memory_region_init_io(&cdev->mmio, OBJECT(cdev), &ctc_mmio_ops, cdev,
++                          "ctc-mmio", CTC_BAR_SIZE);
++    pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &cdev->mmio);
++}
++
++static void pci_ctc_uninit(PCIDevice *pdev)
++{
++    CTCDevState *cdev = CTCDEV(pdev);
++
++    msi_uninit(pdev);
++}
++
++static void ctc_instance_init(Object *obj)
++{
++    CTCDevState *cdev = CTCDEV(obj);
++
++    strcpy(cdev->devid, "hello-00");
++}
++
++static void ctc_class_init(ObjectClass *class, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(class);
++    PCIDeviceClass *k = PCI_DEVICE_CLASS(class);
++
++    k->realize = pci_ctc_realize;
++    k->exit = pci_ctc_uninit;
++    k->vendor_id = PCI_VENDOR_ID_CTC;
++    k->device_id = 0x1;
++    k->revision = 0x10;
++    k->class_id = PCI_CLASS_OTHERS;
++    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
++}
++
++static void pci_ctc_register_types(void)
++{
++    static InterfaceInfo interfaces[] = {
++        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
++        { },
++    };
++    static const TypeInfo ctc_info = {
++        .name          = TYPE_PCI_CTC_DEVICE,
++        .parent        = TYPE_PCI_DEVICE,
++        .instance_size = sizeof(CTCDevState),
++        .instance_init = ctc_instance_init,
++        .class_init    = ctc_class_init,
++        .interfaces = interfaces,
++    };
++
++    type_register_static(&ctc_info);
++}
++type_init(pci_ctc_register_types)
+-- 
+2.27.0
+
+
+From 768dfb84530a8efad38c19a67bb4e8d07751bd80 Mon Sep 17 00:00:00 2001
+From: Guoyi Tu <tugy@chinatelecom.cn>
+Date: Wed, 1 Mar 2023 19:00:32 +0800
+Subject: [PATCH 2/8] ctcdev: Support migration
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecom.cn>
+---
+ hw/misc/ctcdev.c | 28 +++++++++++++++++++++-------
+ 1 file changed, 21 insertions(+), 7 deletions(-)
+
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+index 16840180ec..1df753b484 100644
+--- a/hw/misc/ctcdev.c
++++ b/hw/misc/ctcdev.c
+@@ -31,21 +31,35 @@
+ #include "qemu/main-loop.h" /* iothread mutex */
+ #include "qemu/module.h"
+ #include "qapi/visitor.h"
++#include "migration/vmstate.h"
+ 
+ #define PCI_VENDOR_ID_CTC               0x0
+ 
+ #define TYPE_PCI_CTC_DEVICE "ctc"
+ #define CTCDEV(obj)        OBJECT_CHECK(CTCDevState, obj, TYPE_PCI_CTC_DEVICE)
+ 
+-#define CTC_BAR_SIZE    64
++
++#define CTC_MAX_ID  64
++#define CTC_DEFAULT_ID  "hello-00"
++#define CTC_BAR_SIZE    CTC_MAX_ID
+ 
+ typedef struct {
+     PCIDevice pdev;
+     MemoryRegion mmio;
+-    char devid[64];
++    uint8_t devid[CTC_MAX_ID];
+ } CTCDevState;
+ 
+ 
++static const VMStateDescription vmstate_ctc = {
++    .name = "vdagent",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .fields = (VMStateField[]) {
++        VMSTATE_BUFFER(devid, CTCDevState),
++        VMSTATE_END_OF_LIST()
++    },
++};
++
+ static uint64_t ctc_mmio_read(void *opaque, hwaddr addr, unsigned size)
+ {
+     CTCDevState *cdev = opaque;
+@@ -58,7 +72,7 @@ static uint64_t ctc_mmio_read(void *opaque, hwaddr addr, unsigned size)
+ 
+     switch (size) {
+     case 1:
+-        return (uint8_t)cdev->devid[addr];
++        return cdev->devid[addr];
+     case 2:
+         return *((uint16_t *)(cdev->devid + addr));
+     case 4:
+@@ -81,7 +95,7 @@ static void ctc_mmio_write(void *opaque, hwaddr addr, uint64_t val,
+ 
+     switch (size) {
+     case 1:
+-        cdev->devid[addr] = (uint8_t)val;
++        cdev->devid[addr] = val;
+         break;
+     case 2:
+         *((uint16_t *)(cdev->devid + addr)) = (uint16_t)val;
+@@ -130,8 +144,6 @@ static void pci_ctc_realize(PCIDevice *pdev, Error **errp)
+ 
+ static void pci_ctc_uninit(PCIDevice *pdev)
+ {
+-    CTCDevState *cdev = CTCDEV(pdev);
+-
+     msi_uninit(pdev);
+ }
+ 
+@@ -139,7 +151,7 @@ static void ctc_instance_init(Object *obj)
+ {
+     CTCDevState *cdev = CTCDEV(obj);
+ 
+-    strcpy(cdev->devid, "hello-00");
++    memcpy(cdev->devid, CTC_DEFAULT_ID, strlen(CTC_DEFAULT_ID) + 1);
+ }
+ 
+ static void ctc_class_init(ObjectClass *class, void *data)
+@@ -147,12 +159,14 @@ static void ctc_class_init(ObjectClass *class, void *data)
+     DeviceClass *dc = DEVICE_CLASS(class);
+     PCIDeviceClass *k = PCI_DEVICE_CLASS(class);
+ 
++    dc->vmsd = &vmstate_ctc;
+     k->realize = pci_ctc_realize;
+     k->exit = pci_ctc_uninit;
+     k->vendor_id = PCI_VENDOR_ID_CTC;
+     k->device_id = 0x1;
+     k->revision = 0x10;
+     k->class_id = PCI_CLASS_OTHERS;
++
+     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
+ }
+ 
+-- 
+2.27.0
+
+
+From 35db0f65e02651582bfa2302a6531243d2fb1d5d Mon Sep 17 00:00:00 2001
+From: Guoyi Tu <tugy@chinatelecom.cn>
+Date: Wed, 1 Mar 2023 19:12:31 +0800
+Subject: [PATCH 3/8] ctcdev: Support configure device id string
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecom.cn>
+---
+ hw/misc/ctcdev.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+index 1df753b484..b21304cf3a 100644
+--- a/hw/misc/ctcdev.c
++++ b/hw/misc/ctcdev.c
+@@ -32,6 +32,7 @@
+ #include "qemu/module.h"
+ #include "qapi/visitor.h"
+ #include "migration/vmstate.h"
++#include "hw/qdev-properties.h"
+ 
+ #define PCI_VENDOR_ID_CTC               0x0
+ 
+@@ -46,6 +47,7 @@
+ typedef struct {
+     PCIDevice pdev;
+     MemoryRegion mmio;
++    char *idstr;
+     uint8_t devid[CTC_MAX_ID];
+ } CTCDevState;
+ 
+@@ -133,6 +135,10 @@ static void pci_ctc_realize(PCIDevice *pdev, Error **errp)
+ 
+     pci_config_set_interrupt_pin(pci_conf, 1);
+ 
++    if (cdev->idstr) {
++        memcpy(cdev->devid, cdev->idstr, strlen(cdev->idstr) + 1);
++    }
++
+     if (msi_init(pdev, 0, 1, true, false, errp)) {
+         return;
+     }
+@@ -154,11 +160,17 @@ static void ctc_instance_init(Object *obj)
+     memcpy(cdev->devid, CTC_DEFAULT_ID, strlen(CTC_DEFAULT_ID) + 1);
+ }
+ 
++static Property ctc_dev_properties[] = {
++    DEFINE_PROP_STRING("idstr", CTCDevState, idstr),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
+ static void ctc_class_init(ObjectClass *class, void *data)
+ {
+     DeviceClass *dc = DEVICE_CLASS(class);
+     PCIDeviceClass *k = PCI_DEVICE_CLASS(class);
+ 
++    device_class_set_props(dc, ctc_dev_properties);
+     dc->vmsd = &vmstate_ctc;
+     k->realize = pci_ctc_realize;
+     k->exit = pci_ctc_uninit;
+-- 
+2.27.0
+
+
+From a3949f5b107e7660d1074510a3a847adae8801fe Mon Sep 17 00:00:00 2001
+From: Guoyi Tu <tugy@chinatelecom.cn>
+Date: Wed, 1 Mar 2023 19:28:14 +0800
+Subject: [PATCH 4/8] ctcdev: Print device id string after migration
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecom.cn>
+---
+ hw/misc/ctcdev.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+index b21304cf3a..2c6dacb2be 100644
+--- a/hw/misc/ctcdev.c
++++ b/hw/misc/ctcdev.c
+@@ -52,10 +52,20 @@ typedef struct {
+ } CTCDevState;
+ 
+ 
++static int ctc_post_load(void *opaque, int version_id)
++{
++    CTCDevState *cdev = opaque;
++
++    fprintf(stderr, "ctc device id string: %s\n", (char *)cdev->devid);
++
++    return 0;
++}
++
+ static const VMStateDescription vmstate_ctc = {
+     .name = "vdagent",
+     .version_id = 1,
+     .minimum_version_id = 1,
++    .post_load = ctc_post_load,
+     .fields = (VMStateField[]) {
+         VMSTATE_BUFFER(devid, CTCDevState),
+         VMSTATE_END_OF_LIST()
+-- 
+2.27.0
+
+
+From a86a4a6127ce30d266042fd567abae9f67be48d4 Mon Sep 17 00:00:00 2001
+From: Guoyi Tu <tugy@chinatelecom.cn>
+Date: Thu, 2 Mar 2023 09:41:39 +0800
+Subject: [PATCH 5/8] ctcdev: Update vendor and device id
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecom.cn>
+---
+ hw/misc/ctcdev.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+index 2c6dacb2be..9e523d290b 100644
+--- a/hw/misc/ctcdev.c
++++ b/hw/misc/ctcdev.c
+@@ -34,7 +34,8 @@
+ #include "migration/vmstate.h"
+ #include "hw/qdev-properties.h"
+ 
+-#define PCI_VENDOR_ID_CTC               0x0
++#define PCI_VENDOR_ID_CTC               0x1337
++#define PCI_DEVICE_ID_CTC               0x0001
+ 
+ #define TYPE_PCI_CTC_DEVICE "ctc"
+ #define CTCDEV(obj)        OBJECT_CHECK(CTCDevState, obj, TYPE_PCI_CTC_DEVICE)
+@@ -185,7 +186,7 @@ static void ctc_class_init(ObjectClass *class, void *data)
+     k->realize = pci_ctc_realize;
+     k->exit = pci_ctc_uninit;
+     k->vendor_id = PCI_VENDOR_ID_CTC;
+-    k->device_id = 0x1;
++    k->device_id = PCI_DEVICE_ID_CTC;
+     k->revision = 0x10;
+     k->class_id = PCI_CLASS_OTHERS;
+ 
+-- 
+2.27.0
+
+
+From 120c3ea17d146125b2a89951e01a9010e6f7b2d8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Hyman=20Huang=28=E9=BB=84=E5=8B=87=29?=
+ <huangy81@chinatelecom.cn>
+Date: Thu, 2 Mar 2023 17:11:02 +0800
+Subject: [PATCH 6/8] ctcdev: Print mmio ops
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecom.cn>
+---
+ hw/misc/ctcdev.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+index 9e523d290b..e179603dcd 100644
+--- a/hw/misc/ctcdev.c
++++ b/hw/misc/ctcdev.c
+@@ -68,6 +68,7 @@ static const VMStateDescription vmstate_ctc = {
+     .minimum_version_id = 1,
+     .post_load = ctc_post_load,
+     .fields = (VMStateField[]) {
++  	VMSTATE_PCI_DEVICE(pdev, CTCDevState),
+         VMSTATE_BUFFER(devid, CTCDevState),
+         VMSTATE_END_OF_LIST()
+     },
+@@ -78,6 +79,7 @@ static uint64_t ctc_mmio_read(void *opaque, hwaddr addr, unsigned size)
+     CTCDevState *cdev = opaque;
+     uint64_t val = ~0ULL;
+ 
++    fprintf(stderr, "ctc_mmio_read addr 0x%lx, size %lu\n", addr, size);
+ 
+     if (addr + size > CTC_BAR_SIZE) {
+         return val;
+@@ -102,6 +104,7 @@ static void ctc_mmio_write(void *opaque, hwaddr addr, uint64_t val,
+ {
+     CTCDevState *cdev = opaque;
+ 
++    fprintf(stderr, "ctc_mmio_write addr 0x%lx, val %lu, size %u\n", addr, val, size);
+     if (addr + size > CTC_BAR_SIZE) {
+         return;
+     }
+@@ -129,11 +132,11 @@ static const MemoryRegionOps ctc_mmio_ops = {
+     .write = ctc_mmio_write,
+     .endianness = DEVICE_NATIVE_ENDIAN,
+     .valid = {
+-        .min_access_size = 4,
++        .min_access_size = 1,
+         .max_access_size = 8,
+     },
+     .impl = {
+-        .min_access_size = 4,
++        .min_access_size = 1,
+         .max_access_size = 8,
+     },
+ 
+-- 
+2.27.0
+
+
+From 264c7065c1d455b860abfb7a49e931dc36edde7a Mon Sep 17 00:00:00 2001
+From: Guoyi Tu <tugy@chinatelecon.cn>
+Date: Fri, 3 Mar 2023 13:03:59 +0800
+Subject: [PATCH 7/8] ctcdev: Change device id to 0000
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecon.cn>
+---
+ hw/misc/ctcdev.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+index e179603dcd..a06e0ab8f8 100644
+--- a/hw/misc/ctcdev.c
++++ b/hw/misc/ctcdev.c
+@@ -34,7 +34,7 @@
+ #include "migration/vmstate.h"
+ #include "hw/qdev-properties.h"
+ 
+-#define PCI_VENDOR_ID_CTC               0x1337
++#define PCI_VENDOR_ID_CTC               0x0000
+ #define PCI_DEVICE_ID_CTC               0x0001
+ 
+ #define TYPE_PCI_CTC_DEVICE "ctc"
+@@ -79,7 +79,7 @@ static uint64_t ctc_mmio_read(void *opaque, hwaddr addr, unsigned size)
+     CTCDevState *cdev = opaque;
+     uint64_t val = ~0ULL;
+ 
+-    fprintf(stderr, "ctc_mmio_read addr 0x%lx, size %lu\n", addr, size);
++    fprintf(stderr, "ctc_mmio_read addr 0x%lx, size %u\n", addr, size);
+ 
+     if (addr + size > CTC_BAR_SIZE) {
+         return val;
+-- 
+2.27.0
+
+
+From a22f86c6e12b194271cf96cc0011c557b45450f5 Mon Sep 17 00:00:00 2001
+From: Guoyi Tu <tugy@chinatelecon.cn>
+Date: Fri, 3 Mar 2023 16:18:09 +0800
+Subject: [PATCH 8/8] ctcdev: change device name to "test_demo"
+
+Signed-off-by: Guoyi Tu <tugy@chinatelecon.cn>
+---
+ hw/misc/ctcdev.c | 36 ++++++++++++++++++++++--------------
+ 1 file changed, 22 insertions(+), 14 deletions(-)
+
+diff --git a/hw/misc/ctcdev.c b/hw/misc/ctcdev.c
+index a06e0ab8f8..050993905e 100644
+--- a/hw/misc/ctcdev.c
++++ b/hw/misc/ctcdev.c
+@@ -1,7 +1,7 @@
+ /*
+- * QEMU educational PCI device
++ * Chinatelecom(CTC) PCI device
+  *
+- * Copyright (c) 2012-2015 Jiri Slaby
++ * Copyright (c) 2023 Guoyi Tu <tugy@chinatelecom.cn> 
+  *
+  * Permission is hereby granted, free of charge, to any person obtaining a
+  * copy of this software and associated documentation files (the "Software"),
+@@ -33,15 +33,18 @@
+ #include "qapi/visitor.h"
+ #include "migration/vmstate.h"
+ #include "hw/qdev-properties.h"
++#include "qemu/error-report.h"
+ 
+ #define PCI_VENDOR_ID_CTC               0x0000
+ #define PCI_DEVICE_ID_CTC               0x0001
+ 
+-#define TYPE_PCI_CTC_DEVICE "ctc"
++#define TYPE_PCI_CTC_DEVICE "test_demo"
+ #define CTCDEV(obj)        OBJECT_CHECK(CTCDevState, obj, TYPE_PCI_CTC_DEVICE)
+ 
++#define CTCDEV_DEBUG(fmt, ...) \
++    do { error_report("[test_demo|0x0000,0x00001]"fmt, ## __VA_ARGS__); } while (0)
+ 
+-#define CTC_MAX_ID  64
++#define CTC_MAX_ID  4096 
+ #define CTC_DEFAULT_ID  "hello-00"
+ #define CTC_BAR_SIZE    CTC_MAX_ID
+ 
+@@ -57,7 +60,7 @@ static int ctc_post_load(void *opaque, int version_id)
+ {
+     CTCDevState *cdev = opaque;
+ 
+-    fprintf(stderr, "ctc device id string: %s\n", (char *)cdev->devid);
++    CTCDEV_DEBUG("ctc device id string: %s\n", (char *)cdev->devid);
+ 
+     return 0;
+ }
+@@ -79,24 +82,29 @@ static uint64_t ctc_mmio_read(void *opaque, hwaddr addr, unsigned size)
+     CTCDevState *cdev = opaque;
+     uint64_t val = ~0ULL;
+ 
+-    fprintf(stderr, "ctc_mmio_read addr 0x%lx, size %u\n", addr, size);
+-
+     if (addr + size > CTC_BAR_SIZE) {
++        CTCDEV_DEBUG("mmio_read: addr 0x%lx, size %u, val %lu", addr, size, val);
+         return val;
+     }
+ 
+     switch (size) {
+     case 1:
+-        return cdev->devid[addr];
++        val = cdev->devid[addr];
++	break;
+     case 2:
+-        return *((uint16_t *)(cdev->devid + addr));
++        val =  *((uint16_t *)(cdev->devid + addr));
++	break;
+     case 4:
+-        return *((uint32_t *)(cdev->devid + addr));
++        val = *((uint32_t *)(cdev->devid + addr));
++	break;
+     case 8:
+-        return *((uint64_t *)(cdev->devid + addr));
++        val = *((uint64_t *)(cdev->devid + addr));
++	break;
+     default:
+-        return val;
++	break;
+     }
++    CTCDEV_DEBUG("mmio_read: addr 0x%lx, size %u, val %lu", addr, size, val);
++    return val;
+ }
+ 
+ static void ctc_mmio_write(void *opaque, hwaddr addr, uint64_t val,
+@@ -104,7 +112,7 @@ static void ctc_mmio_write(void *opaque, hwaddr addr, uint64_t val,
+ {
+     CTCDevState *cdev = opaque;
+ 
+-    fprintf(stderr, "ctc_mmio_write addr 0x%lx, val %lu, size %u\n", addr, val, size);
++    CTCDEV_DEBUG("mmio_write addr 0x%lx, size %u, val %lu", addr, size, val);
+     if (addr + size > CTC_BAR_SIZE) {
+         return;
+     }
+@@ -159,7 +167,7 @@ static void pci_ctc_realize(PCIDevice *pdev, Error **errp)
+ 
+     memory_region_init_io(&cdev->mmio, OBJECT(cdev), &ctc_mmio_ops, cdev,
+                           "ctc-mmio", CTC_BAR_SIZE);
+-    pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &cdev->mmio);
++    pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_MEM_PREFETCH | PCI_BASE_ADDRESS_SPACE_MEMORY, &cdev->mmio);
+ }
+ 
+ static void pci_ctc_uninit(PCIDevice *pdev)
+-- 
+2.27.0
