@@ -1,0 +1,10 @@
+[Unit]
+Description=guest vm event monitor
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gvm-event-monitor
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
