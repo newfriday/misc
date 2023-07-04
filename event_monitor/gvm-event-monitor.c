@@ -16,6 +16,7 @@
 
 #include "gvm-event-monitor.h"
 #include "misc.h"
+#include "cJSON.h"
 
 #define STREQ(a, b) (strcmp(a, b) == 0)
 #define NULLSTR(s) ((s) ? (s) : "<null>")
@@ -325,11 +326,31 @@ struct domainEventData domainEvents[] = {
     DOMAIN_EVENT(VIR_DOMAIN_EVENT_ID_LIFECYCLE, gemDomainEventLifeCycleCallback),
 };
 
+static cJSON *
+helloWorld(jrpc_context * ctx, cJSON * params, cJSON *id) {
+    char *para_string = NULL;
+
+    para_string = cJSON_Print(params);
+    fprintf(stderr, "hello world: %s\n", para_string);
+
+    return NULL;
+}
+
+static void
+gemRpcServerRegister(jrpc_server_ptr server, int port)
+{
+    jrpc_server_init(server, port);
+    jrpc_register_procedure(server, helloWorld,
+                            "helloworld", NULL);
+}
+
 int
 main(int argc, char **argv)
 {
     int ret = EXIT_FAILURE;
     virConnectPtr dconn = NULL;
+    gemServerPtr gemserver = NULL;
+    int port = DEFAULT_RPC_PORT;
     size_t i;
 
     if (argc > 1 && STREQ(argv[1], "--help")) {
@@ -384,6 +405,14 @@ main(int argc, char **argv)
             goto cleanup;
         }
     }
+
+    gemserver = g_malloc0(sizeof(gemServer));
+    if (!gemserver) {
+        fprintf(stderr, "Failed to alloc memory\n");
+        goto cleanup;
+    }
+
+    gemRpcServerRegister(&gemserver->rpc_server, port);
 
     if (virConnectSetKeepAlive(dconn, 5, 3) < 0) {
         fprintf(stderr, "Failed to start keepalive protocol: %s\n",
