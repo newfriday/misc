@@ -13,5 +13,3 @@
     -D /var/log/mig_src.log \
     --trace events=/home/work/fast_qemu/events \
     -m 4096 -smp 2 -device sga
-
-    #-drive file=/home/ml_code/my_qemu/tests/migration/i386/x86.bootsect,format=raw \
