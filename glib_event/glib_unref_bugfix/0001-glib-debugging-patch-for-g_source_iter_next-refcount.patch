@@ -1,0 +1,76 @@
+From 86a6286536c9bc1266faa0df398d4d0d89364371 Mon Sep 17 00:00:00 2001
+Message-Id: <86a6286536c9bc1266faa0df398d4d0d89364371.1581356372.git.crobinso@redhat.com>
+From: Cole Robinson <crobinso@redhat.com>
+Date: Mon, 10 Feb 2020 10:37:10 -0500
+Subject: [PATCH] glib debugging patch for g_source_iter_next refcount issue
+
+Signed-off-by: Cole Robinson <crobinso@redhat.com>
+---
+ glib/gmain.c | 21 +++++++++++++++++++--
+ 1 file changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/glib/gmain.c b/glib/gmain.c
+index 95093e727..abec0c40a 100644
+--- a/glib/gmain.c
++++ b/glib/gmain.c
+@@ -32,6 +32,7 @@
+ #include "config.h"
+ #include "glibconfig.h"
+ #include "glib_trace.h"
++#include <stdio.h>
+ 
+ /* Uncomment the next line (and the corresponding line in gpoll.c) to
+  * enable debugging printouts if the environment variable
+@@ -970,8 +971,12 @@ g_source_iter_next (GSourceIter *iter, GSource **source)
+    * keep it reffed until after we advance iter->current_list, above.
+    */
+ 
+-  if (iter->source && iter->may_modify)
++  if (iter->source && iter->may_modify) {
++    printf("ITERNEXT: unref_internal START source=%p refcount=%d next_source=%p\n",
++           iter->source, iter->source->ref_count, next_source);
+     g_source_unref_internal (iter->source, iter->context, TRUE);
++    printf("ITERNEXT: unref_internal DONE\n");
++  }
+   iter->source = next_source;
+   if (iter->source && iter->may_modify)
+     g_source_ref (iter->source);
+@@ -2117,8 +2122,14 @@ g_source_unref_internal (GSource      *source,
+           /* Temporarily increase the ref count again so that GSource methods
+            * can be called from finalize(). */
+           g_atomic_int_inc (&source->ref_count);
+-	  if (context)
++	  if (context) {
+ 	    UNLOCK_CONTEXT (context);
++        if (source->name && (strcmp(source->name, "source1") == 0)) {
++            printf("SLEEPING IN UNREF for source 1\n");
++            g_usleep(G_USEC_PER_SEC * 2);
++            printf("SLEEPING IN UNREF COMPLETE\n");
++        }
++      }
+ 	  source->source_funcs->finalize (source);
+ 	  if (context)
+ 	    LOCK_CONTEXT (context);
+@@ -2140,6 +2151,7 @@ g_source_unref_internal (GSource      *source,
+           g_atomic_int_add (&source->ref_count, -1);
+         }
+ 
++      printf("UNREF: freeing source=%p name=%s\n", source, source->name);
+       g_free (source->name);
+       source->name = NULL;
+ 
+@@ -3753,6 +3765,11 @@ g_main_context_check (GMainContext *context,
+               context->in_check_or_prepare++;
+               UNLOCK_CONTEXT (context);
+ 
++              if (source->name && strcmp(source->name, "source1") == 0) {
++                  printf("STARTING CHECK SLEEP\n");
++                  g_usleep(G_USEC_PER_SEC * 2);
++                  printf("CHECK SLEEP DONE\n");
++              }
+               result = (* check) (source);
+ 
+               TRACE (GLIB_MAIN_AFTER_CHECK (source, check, result));
+-- 
+2.24.1
+
