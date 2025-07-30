@@ -1,0 +1,58 @@
+From 07d1c5c2a1645115afb1859579c4fe30d19182d5 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Tue, 29 Jul 2025 11:40:17 +0800
+Subject: [PATCH] enable {vioscsi,viostor} debug
+
+---
+ vioscsi/trace.h             | 2 +-
+ viostor/virtio_stor_trace.h | 4 ++--
+ viostor/virtio_stor_utils.c | 2 +-
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/vioscsi/trace.h b/vioscsi/trace.h
+index aa9fdce5..e13fa363 100755
+--- a/vioscsi/trace.h
++++ b/vioscsi/trace.h
+@@ -46,7 +46,7 @@
+ /* EVENT_TRACING - CHOOSE BETWEEN DEBUG OR TRACING
+  * if EVENT_TRACING is undefined, DEBUG (DBG) will be enabled below... */
+ #define EVENT_TRACING 1
+-//#undef EVENT_TRACING  // <== switch me here with comment
++#undef EVENT_TRACING  // <== switch me here with comment
+
+ #include <ntddk.h>
+ #include <storport.h>
+diff --git a/viostor/virtio_stor_trace.h b/viostor/virtio_stor_trace.h
+index 048430a6..a656d897 100755
+--- a/viostor/virtio_stor_trace.h
++++ b/viostor/virtio_stor_trace.h
+@@ -30,13 +30,13 @@
+ #ifndef ___VIOSTOR_TRACING_H___
+ #define ___VIOSTOR_TRACING_H___
+
+-//#define DBG 1
++#define DBG 1
+
+ #include <ntddk.h>
+ #include <storport.h>
+ #include <stdarg.h>
+
+-//#define PRINT_DEBUG 1
++#define PRINT_DEBUG 1
+ //#define COM_DEBUG 1
+
+
+diff --git a/viostor/virtio_stor_utils.c b/viostor/virtio_stor_utils.c
+index 10840fa6..a830cc49 100644
+--- a/viostor/virtio_stor_utils.c
++++ b/viostor/virtio_stor_utils.c
+@@ -91,7 +91,7 @@ void InitializeDebugPrints(IN PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regis
+     // TBD - Read nDebugLevel and bDebugPrint from the registry
+     bDebugPrint = 1;
+     virtioDebugLevel = 0;
+-    nViostorDebugLevel = TRACE_LEVEL_ERROR; // TRACE_LEVEL_VERBOSE;//
++    nViostorDebugLevel = TRACE_LEVEL_VERBOSE; // TRACE_LEVEL_VERBOSE;//
+
+ #if defined(PRINT_DEBUG)
+     VirtioDebugPrintProc = DebugPrintFunc;
+--
